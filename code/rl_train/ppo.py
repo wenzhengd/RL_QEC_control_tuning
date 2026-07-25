@@ -374,6 +374,7 @@ def train_ppo(
         model: Trained ActorCritic model.
         history: Dict of per-update scalar logs.
     """
+    cfg.validate()
     _set_seed(cfg.seed)
     device = torch.device(cfg.device)
 

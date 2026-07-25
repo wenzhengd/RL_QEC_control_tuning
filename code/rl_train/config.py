@@ -1,5 +1,6 @@
 """Configuration container for PPO training."""
 
+import math
 from dataclasses import dataclass
 
 
@@ -54,3 +55,40 @@ class PPOConfig:
     use_layer_norm: bool = False
     seed: int = 42
     device: str = "cpu"
+
+    def validate(self) -> None:
+        """Raise a readable error when PPO settings cannot produce a valid run."""
+        errors: list[str] = []
+        for name in (
+            "obs_dim",
+            "theta_dim",
+            "max_steps",
+            "total_timesteps",
+            "rollout_steps",
+            "update_epochs",
+            "minibatch_size",
+            "hidden_dim",
+        ):
+            if getattr(self, name) <= 0:
+                errors.append(f"{name} must be greater than 0 (got {getattr(self, name)!r})")
+
+        for name in ("learning_rate", "max_grad_norm"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value <= 0:
+                errors.append(f"{name} must be a finite value greater than 0 (got {value!r})")
+
+        for name in ("gamma", "gae_lambda"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                errors.append(f"{name} must be between 0 and 1 inclusive (got {value!r})")
+
+        for name in ("clip_eps", "ent_coef", "vf_coef"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value < 0:
+                errors.append(f"{name} must be a finite non-negative value (got {value!r})")
+
+        if not isinstance(self.device, str) or not self.device.strip():
+            errors.append("device must be a non-empty Torch device string")
+
+        if errors:
+            raise ValueError("Invalid PPO configuration:\n  - " + "\n  - ".join(errors))

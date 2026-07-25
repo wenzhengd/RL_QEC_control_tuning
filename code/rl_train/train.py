@@ -5,6 +5,7 @@ Replace TODO sections with your task definition.
 """
 
 import argparse
+import math
 from dataclasses import replace
 from typing import Callable, Dict, cast
 
@@ -354,7 +355,78 @@ def main() -> None:
         print(f"  Relative improvement: DR={dr_imp * 100.0:+.2f}%, LER~={ler_imp * 100.0:+.2f}%")
 
 
-def parse_args() -> argparse.Namespace:
+def _validate_cli_args(args: argparse.Namespace) -> list[str]:
+    """Return all actionable CLI validation errors instead of failing one at a time."""
+    errors: list[str] = []
+
+    positive_ints = {
+        "--max-steps": args.max_steps,
+        "--total-timesteps": args.total_timesteps,
+        "--rollout-steps": args.rollout_steps,
+        "--ppo-update-epochs": args.ppo_update_epochs,
+        "--ppo-minibatch-size": args.ppo_minibatch_size,
+        "--ppo-hidden-dim": args.ppo_hidden_dim,
+        "--steane-n-rounds": args.steane_n_rounds,
+        "--steane-shots-per-step": args.steane_shots_per_step,
+        "--steane-control-dim": args.steane_control_dim,
+        "--steane-n-1q-control-slots": args.steane_n_1q_control_slots,
+        "--steane-n-2q-control-slots": args.steane_n_2q_control_slots,
+        "--steane-shot-workers": args.steane_shot_workers,
+    }
+    for flag, value in positive_ints.items():
+        if value <= 0:
+            errors.append(f"{flag} must be greater than 0 (got {value})")
+
+    positive_floats = {
+        "--action-limit": args.action_limit,
+        "--ppo-learning-rate": args.ppo_learning_rate,
+        "--steane-drift-period-steps": args.steane_drift_period_steps,
+        "--steane-p-clip-max": args.steane_p_clip_max,
+        "--steane-channel-corr-f": args.steane_channel_corr_f,
+    }
+    for flag, value in positive_floats.items():
+        if not math.isfinite(value) or value <= 0:
+            errors.append(f"{flag} must be a finite value greater than 0 (got {value})")
+
+    non_negative = {
+        "--ppo-ent-coef": args.ppo_ent_coef,
+        "--steane-drift-amplitude": args.steane_drift_amplitude,
+        "--steane-p1q-base": args.steane_p1q_base,
+        "--steane-p2q-base": args.steane_p2q_base,
+        "--steane-sensitivity-1q": args.steane_sensitivity_1q,
+        "--steane-sensitivity-2q": args.steane_sensitivity_2q,
+        "--steane-idle-p-total-per-idle": args.steane_idle_p_total_per_idle,
+        "--steane-idle-px-weight": args.steane_idle_px_weight,
+        "--steane-idle-py-weight": args.steane_idle_py_weight,
+        "--steane-idle-pz-weight": args.steane_idle_pz_weight,
+        "--steane-channel-corr-g": args.steane_channel_corr_g,
+        "--steane-action-penalty-coef": args.steane_action_penalty_coef,
+        "--steane-miscal-penalty-coef": args.steane_miscal_penalty_coef,
+        "--steane-success-bonus-coef": args.steane_success_bonus_coef,
+    }
+    for flag, value in non_negative.items():
+        if not math.isfinite(value) or value < 0:
+            errors.append(f"{flag} must be a finite non-negative value (got {value})")
+
+    for flag, value in (
+        ("--steane-p-clip-max", args.steane_p_clip_max),
+        ("--steane-idle-p-total-per-idle", args.steane_idle_p_total_per_idle),
+        ("--steane-measurement-bitflip-prob", args.steane_measurement_bitflip_prob),
+    ):
+        if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            errors.append(f"{flag} must be between 0 and 1 inclusive (got {value})")
+
+    weights = (args.steane_idle_px_weight, args.steane_idle_py_weight, args.steane_idle_pz_weight)
+    if all(math.isfinite(value) and value >= 0 for value in weights) and sum(weights) <= 0:
+        errors.append("at least one Steane idle Pauli weight must be greater than 0")
+    if not isinstance(args.device, str) or not args.device.strip():
+        errors.append("--device must not be empty")
+    if args.post_eval_episodes < 0:
+        errors.append(f"--post-eval-episodes must be non-negative (got {args.post_eval_episodes})")
+    return errors
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """CLI options for switching backends and key hyperparameters.
 
     Examples:
@@ -472,7 +544,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steane-miscal-penalty-coef", type=float, default=0.0)
     parser.add_argument("--steane-success-bonus-coef", type=float, default=0.0)
     parser.add_argument("--post-eval-episodes", type=int, default=0)
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    errors = _validate_cli_args(args)
+    if errors:
+        parser.error("invalid configuration:\n  - " + "\n  - ".join(errors))
+    return args
 
 
 if __name__ == "__main__":
